@@ -6,6 +6,6 @@
  - Compression of 750k German Text: 1.685s
  - Decompression of the Same Text: 1m24.841s
 
-### Commit 433b16
+### Commit 433b16 (constant insert into dict in decompression)
  - Compression of 750k German Text: 1.752
  - Decompression of the Same Text: 0.413s
