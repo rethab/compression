@@ -1,3 +1,7 @@
 *.hi
 *.o
+
 lzw
+
+big.txt
+*.zip
