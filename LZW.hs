@@ -48,15 +48,15 @@ compress = B.toLazyByteString . step defaultCDict [] (-1)
 
 -- | Decompress the contents of the 'ByteString' with the LZW Algorithm
 decompress :: BS.ByteString -> BS.ByteString
-decompress = B.toLazyByteString . step newdict []
-    where step :: M.HashMap Word32 String -> String -> BS.ByteString -> B.Builder
+decompress = B.toLazyByteString . step defaultDDict []
+    where step :: Dict Word32 String -> String -> BS.ByteString -> B.Builder
           step dict prev bs = case readWord32 bs of
                                 Nothing -> mempty
                                 Just (idx, bs') -> flush dict bs' idx prev
-          flush :: M.HashMap Word32 String -> BS.ByteString -> Word32 -> String -> B.Builder
+          flush :: Dict Word32 String -> BS.ByteString -> Word32 -> String -> B.Builder
           flush dict bs idx prev =
-            case M.lookup idx dict of
-              Nothing -> if idx /= dsize
+            case search dict idx of
+              Nothing -> if idx /= fromIntegral (dsize dict)
                             then error ("missing index " ++ show idx)
                             else let suffix = take 1 prev
                                      cur = prev ++ suffix
@@ -64,12 +64,10 @@ decompress = B.toLazyByteString . step newdict []
                                             (step (pushdict suffix) cur bs)
               Just word -> mappend (B.string8 word)
                                    (step (pushdict word) word bs)
-              where dsize = fromIntegral $ M.size dict
+              where dsize (Dict size' _ ) = size'
                     pushdict suffix = if null prev
                                         then dict -- first lookup
-                                        else M.insert dsize (prev ++ [head suffix]) dict
-          newdict = M.fromList $ map (\ord -> (ord, chr' ord)) [0..255 :: Word32]
-          chr' c = [chr (fromIntegral c)]
+                                        else putD dict (prev ++ [head suffix])
 
 -- | Reads four 'Word8's and puts them together into a 'Word32'
 readWord32 :: BS.ByteString -> Maybe (Word32, BS.ByteString)
@@ -86,14 +84,11 @@ to32 a b c d = shiftL (fromIntegral a) 24
            .|. shiftL (fromIntegral c)  8
            .|. (fromIntegral d)
 
--- | The Keys are the actual entries, Values are the indices of the 'HashMap'
---
--- This ensures constant lookup of strings and constant put, because
--- the new index of a value (i.e. the actual value) will always be
--- the current size of the map.
---
--- The size is cached, because that is used on each insert (as the value)
--- and computing it would require O(n)
+-- | Dictionary type for LZW algorithm. The internal structure is a
+--   HashMap for constant lookup and constant insert. Since, depending
+--   on whether we're compressing or decompressing, the current size
+--   of the hashmap is the key or the value, we cache the size as
+--   evaluating it has complexity of O(n)
 data Dict k v = Dict { size :: Word, vals :: M.HashMap k v }
 
 -- | Searches the given value in the dictionary and returns its index
@@ -103,10 +98,21 @@ search (Dict _ hmap) needle = M.lookup needle hmap
 -- | Appends to dictionary for compression
 putC :: Dict String Word -> String -> Dict String Word
 putC (Dict hsize hmap) key = Dict { size = hsize + 1
-                                 , vals = M.insert key hsize hmap }
+                                  , vals = M.insert key hsize hmap }
+
+-- | Appends to dictionary for decompression
+putD :: Dict Word32 String -> String -> Dict Word32 String
+putD (Dict hsize hmap) val = Dict { size = hsize + 1
+                                  , vals = M.insert (fromIntegral hsize) val hmap }
 
 -- | Default dictionary for compression with ascii
 defaultCDict :: Dict String Word
 defaultCDict = Dict { size = 256
                    , vals = M.fromList $ map (\ord -> (chr' ord, ord)) [0..255] }
+    where chr' c = [chr $ fromIntegral c]
+
+-- | Default dictionary for decompression with ascii
+defaultDDict :: Dict Word32 String
+defaultDDict = Dict { size = 256
+                   , vals = M.fromList $ map (\ord -> (ord, chr' ord)) [0..255 :: Word32] }
     where chr' c = [chr $ fromIntegral c]
