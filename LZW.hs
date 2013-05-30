@@ -2,8 +2,9 @@ module LZW where
 
 import Data.Bits                    ((.|.), shiftL)
 import Data.Char                    (chr)
+import Data.Hashable                (Hashable)
 import Data.Monoid                  (mempty, mappend)
-import Data.Word                    (Word8, Word32)
+import Data.Word                    (Word, Word8, Word32)
 
 import qualified Data.HashMap.Lazy as M
 import qualified Data.ByteString.Lazy as BS
@@ -24,11 +25,11 @@ import qualified Data.ByteString.Lazy.Builder as B
 --                                put previous index to builder
 --   else all done
 compress :: BS.ByteString -> BS.ByteString
-compress bs = B.toLazyByteString $ step defaultDict bs [] (-1)
+compress = B.toLazyByteString . step defaultCDict [] (-1)
     where
           -- take one char from bytestring and pass it to the encoding function
-          step :: Dict -> C.ByteString -> String -> Int -> B.Builder
-          step dict bs acc idx = case C.uncons bs of
+          step :: Dict String Word -> String -> Word -> C.ByteString -> B.Builder
+          step dict acc idx bs = case C.uncons bs of
                                    Nothing -> if null acc
                                                  -- end of input, no bytes consumed
                                                  then mempty 
@@ -36,20 +37,20 @@ compress bs = B.toLazyByteString $ step defaultDict bs [] (-1)
                                                  else B.word32BE (fromIntegral idx)
                                    Just (c, bs') -> encode dict bs' (acc, c) idx
           -- take consumed input (acc) and new char (c) and look it up in the dict
-          encode :: Dict -> C.ByteString -> (String, Char) -> Int -> B.Builder
+          encode :: Dict String Word -> C.ByteString -> (String, Char) -> Word -> B.Builder
           encode dict bs (acc, c) idx = let acc' = acc ++ [c]
                                         in case search dict acc' of
                                              -- add old index to builder, encode consumed char
                                              Nothing -> mappend (B.word32BE $ fromIntegral idx)
-                                                                (encode (put dict acc') bs ([], c) (-1))
+                                                                (encode (putC dict acc') bs ([], c) (-1))
                                              -- exists in dict. consume from bytestring
-                                             Just idx' -> step dict bs acc' idx'
+                                             Just idx' -> step dict acc' idx' bs 
 
 -- | Decompress the contents of the 'ByteString' with the LZW Algorithm
 decompress :: BS.ByteString -> BS.ByteString
-decompress bs = B.toLazyByteString $ step newdict bs []
-    where step :: M.HashMap Word32 String -> BS.ByteString -> String -> B.Builder
-          step dict bs prev = case readWord32 bs of
+decompress = B.toLazyByteString . step newdict []
+    where step :: M.HashMap Word32 String -> String -> BS.ByteString -> B.Builder
+          step dict prev bs = case readWord32 bs of
                                 Nothing -> mempty
                                 Just (idx, bs') -> flush dict bs' idx prev
           flush :: M.HashMap Word32 String -> BS.ByteString -> Word32 -> String -> B.Builder
@@ -60,9 +61,9 @@ decompress bs = B.toLazyByteString $ step newdict bs []
                             else let suffix = take 1 prev
                                      cur = prev ++ suffix
                                  in mappend (B.string8 cur)
-                                            (step (pushdict suffix) bs cur)
+                                            (step (pushdict suffix) cur bs)
               Just word -> mappend (B.string8 word)
-                                   (step (pushdict word) bs word)
+                                   (step (pushdict word) word bs)
               where dsize = fromIntegral $ M.size dict
                     pushdict suffix = if null prev
                                         then dict -- first lookup
@@ -93,19 +94,19 @@ to32 a b c d = shiftL (fromIntegral a) 24
 --
 -- The size is cached, because that is used on each insert (as the value)
 -- and computing it would require O(n)
-data Dict = Dict { size :: Int, vals :: M.HashMap String Int }
+data Dict k v = Dict { size :: Word, vals :: M.HashMap k v }
 
 -- | Searches the given value in the dictionary and returns its index
-search :: Dict -> String -> Maybe Int
+search :: (Hashable k, Eq k) => Dict k v -> k -> Maybe v
 search (Dict _ hmap) needle = M.lookup needle hmap 
 
--- | Appends to dictionary
-put :: Dict -> String -> Dict
-put (Dict hsize hmap) key = Dict { size = hsize + 1
+-- | Appends to dictionary for compression
+putC :: Dict String Word -> String -> Dict String Word
+putC (Dict hsize hmap) key = Dict { size = hsize + 1
                                  , vals = M.insert key hsize hmap }
 
--- | Default dictionary with ascii
-defaultDict :: Dict
-defaultDict = Dict { size = 256
+-- | Default dictionary for compression with ascii
+defaultCDict :: Dict String Word
+defaultCDict = Dict { size = 256
                    , vals = M.fromList $ map (\ord -> (chr' ord, ord)) [0..255] }
-    where chr' c = [chr c]
+    where chr' c = [chr $ fromIntegral c]

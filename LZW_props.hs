@@ -34,12 +34,12 @@ main = putStrLn "string_props:" >>mapM_ quickCheck string_props >>
 -- QuickCheck Tests: String 
 string_props = [ exist_after_put, only_ascii_exist ]
 
-exist_after_put xs = length xs > 1 ==> let withVal = put defaultDict xs 
+exist_after_put xs = length xs > 1 ==> let withVal = putC defaultCDict xs 
                                        in isJust (search withVal xs)
 
 only_ascii_exist xs = not (null xs) ==> if length xs > 1
-                                          then isNothing (search defaultDict xs)
-                                          else isJust (search defaultDict xs)
+                                          then isNothing (search defaultCDict xs)
+                                          else isJust (search defaultCDict xs)
 
 -- QuickCheck Tests: ByteString
 bytestring_props = [consumes_four]
@@ -99,11 +99,11 @@ units = map (\(lbl, test) -> TestLabel lbl test) units'
 
 -- Dict tests
 
-append_index = let dict = put defaultDict "AA"
+append_index = let dict = putC defaultCDict "AA"
                    idx = fromJust (search dict "AA")
                in do idx @?= 256
 
-append_index2 = let dict = put (put defaultDict "AA") "AAA"
+append_index2 = let dict = putC (putC defaultCDict "AA") "AAA"
                     idx1 = fromJust (search dict "AA")
                     idx2 = fromJust (search dict "AAA")
                 in do idx1 @?= 256
