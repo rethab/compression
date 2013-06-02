@@ -1,4 +1,4 @@
-module Encoder where
+module Compression.Huffman.Encoder where
 
 import Control.Arrow       (first, second)
 import Control.Monad       (mplus, liftM2)

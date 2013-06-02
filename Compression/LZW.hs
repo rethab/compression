@@ -1,4 +1,4 @@
-module LZW where
+module Compression.LZW where
 
 import Data.Bits                    ((.|.), shiftL)
 import Data.Char                    (chr)

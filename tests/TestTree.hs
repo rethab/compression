@@ -87,6 +87,10 @@ prop_same_bits (BitString bs) =
             else let (y,ys) = splitAt len xs in y : (splitlen len ys)
     in all id $ zipWith biteq (BS.unpack bytes) (splitlen 8 bs)
 
+prop_ser_compose tree = height tree > 50 ==>
+    let dec = (deserialize . serialize) tree
+    in all id 
+
 
 -- HUnit Tests
 
