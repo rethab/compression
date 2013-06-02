@@ -1,9 +1,11 @@
 *.hi
 *.o
 *.tix
+*.zip
+.hpc
+dist/
 
 lzw
-.hpc
+runtests
 
 big.txt
-*.zip

@@ -1,15 +1,13 @@
+{-# LANGUAGE TypeSynonymInstances, FlexibleInstances #-}
+
 module Compression.Huffman.Encoder where
 
-import Control.Arrow       (first, second)
-import Control.Monad       (mplus, liftM2)
 import Data.Hashable
 import Data.Monoid         (mappend)
 import Data.Word           (Word32)
 
 import qualified Data.Binary.BitBuilder    as B
-import qualified Data.Binary.Strict.BitGet as BitGet
 import qualified Data.Binary.Put           as BinPut
-import qualified Data.Binary.Strict.Get    as BinGet
 import qualified Data.ByteString           as S
 import qualified Data.ByteString.Lazy      as L
 import qualified Data.HashMap.Strict       as M
@@ -30,60 +28,65 @@ instance Functor Tree where
 --     b. zero: leaf. is stack empty?
 --       I. yes: done
 --       II. no: pop node from stack. traverse right. goto 1
-type StrucutreBits = [Bool]
+type StructureBits = [Bool]
 
-data HuffTree a = HuffTree (M.HashMap a BitBuilder) StructureBits
+data HuffTree a = HuffTree (M.HashMap a B.BitBuilder) StructureBits
+    deriving (Show)
 
 class Serializable a where
     serialize :: a -> S.ByteString
 
 instance Serializable StructureBits where
     serialize = toBS . foldl mappend B.empty . map B.singleton
-  where toBS = L.toStrict . B.toLazyByteString
+      where toBS = L.toStrict . B.toLazyByteString
 
 instance Serializable Word32 where
      serialize  = L.toStrict . BinPut.runPut . BinPut.putWord32be 
 
+instance Serializable Int where
+     serialize  = L.toStrict . BinPut.runPut . BinPut.putWord64be . fromIntegral
 
 -- | Searches a the bits for a value
-lookupBits :: HuffTree a -> a -> Maybe BitBuilder
+lookupBits :: (Eq a, Hashable a) => HuffTree a -> a -> Maybe B.BitBuilder
 lookupBits (HuffTree map _) needle = M.lookup needle map
 
 -- | Creates a Huffmann Tree from a List of Values and their probablities
 createHuffTree :: (Eq a, Hashable a) => [(a, Float)] -> HuffTree a
-createHuffTree vals = let tree = (assigneCodes . combineAll . maptoLeaf) vals
-                          map = (fmap toBitBuilder . toHashMap) tree
+createHuffTree vals = let tree = (assignCodes . combineAll . map Leaf) vals
+                          hmap = (fmap toBitBuilder . toHashMap) tree
                           treebits = encodeTree tree
-                      in HuffTree map treebits
-    where encodeTree :: Tree a -> StructureBits
-          encodeTree (Leaf _ _) = [False]
+                      in HuffTree hmap treebits
+    where encodeTree :: Tree (a, String) -> StructureBits
+          encodeTree (Leaf _) = [False]
           encodeTree (Node l r) = encodeTree l ++ encodeTree r
 
-          toHashMap :: Tree (a, String) -> M.HashMap a BitBuilder
+          toHashMap :: (Eq a, Hashable a) => Tree (a, String) -> M.HashMap a String
           toHashMap tree = go tree M.empty
-            where go (Leaf (a, bits) _) map = M.insert a bits map
+            where go (Leaf (a, bits)) map = M.insert a bits map
                   go (Node l r) map = go l map `M.union` go r map
 
-          toBitBuilder :: String -> B.BitBuilder
-          toBitBuilder = foldl (\acc char -> B.append acc (c2b char)) B.empty
+
+-- | Encodes a string of bits into a builder
+toBitBuilder :: String -> B.BitBuilder
+toBitBuilder = foldl (\acc char -> B.append acc (c2b char)) B.empty
+    where c2b :: Char -> B.BitBuilder
           c2b '0' = B.singleton False
           c2b '1' = B.singleton True
 
 -- | Serializes the Tree into a ByteString
 serializeTree :: (Serializable a) => HuffTree a -> S.ByteString
-serializeTree (HuffTree map treebits) = serialize (M.size map)
-                              `mappend` serialize (M.keys map)
-                              `mappend` serialize treebytes
+serializeTree (HuffTree hmap treebits) = serialize (M.size hmap)
+                               `mappend` S.concat (map serialize (M.keys hmap))
+                               `mappend` serialize treebits
 
 -- | Combines all 'Tree's according to Huffmann into one single 'Tree'
-combineAll :: [Tree a] -> Tree a
-combineAll ts
-    | length ts > 1  = combineAll (combineSmallest ts)
-    | length ts == 1 = ts !! 0
-    | otherwise      = error "node without kids should be a leaf"
+combineAll :: [Tree (a, Float)] -> Tree (a, Float)
+combineAll []     = error "empty list cannot be combined"
+combineAll (t:[]) = t
+combineAll ts     = combineAll (combineSmallest ts)
 
 -- | Combines the two nodes with the smallest weight on this level.
-combineSmallest :: [Tree a] -> [Tree a]
+combineSmallest :: [Tree (a, Float)] -> [Tree (a, Float)]
 combineSmallest [] = []
 combineSmallest (a:[]) = a : []
 combineSmallest (a:b:[]) = [Node a b]
@@ -96,8 +99,16 @@ combineSmallest (a:b:xs)
                 where (aw, bw, cw) = (weight a, weight b, weight c)
 
 -- | Assignes the bits to each node according to Huffmann
-assignCodes :: Tree a -> Tree (a, String)
+assignCodes :: Tree (a, Float) -> Tree (a, String)
 assignCodes root = go root []
-    where go (Leaf a w) code = Leaf (a, code) w
-          go (Node l r) code = Node (go l (code++"1"))
-                                    (go r (code++"0"))
+    where go (Leaf (a, w)) code = Leaf (a, code)
+          go (Node l r) code    = Node (go l (code++"1"))
+                                       (go r (code++"0"))
+
+weight :: Tree (a, Float) -> Float
+weight (Leaf (_, w)) = w
+weight (Node r l)    = go 0 r l
+    where go acc (Leaf (_, w1)) (Leaf (_, w2)) = acc + w1 + w2
+          go acc (Leaf (_, w)) (Node l1 r1)   = go (acc + w) l1 r1
+          go acc (Node l1 r1) (Leaf (_, w))   = go (acc + w) l1 r1
+          go acc (Node r1 l1) (Node r2 l2) = go (go acc r1 l1) r2 l2

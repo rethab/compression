@@ -1,5 +1,7 @@
 {-# LANGUAGE TemplateHaskell #-}
 
+module Decoder where
+
 import Control.Monad       (liftM, liftM2)
 import Data.Bits           (testBit)
 import Data.List           (isPrefixOf)
@@ -7,7 +9,8 @@ import Data.Maybe          (isJust)
 import Test.QuickCheck
 import Test.QuickCheck.All
 import Test.HUnit
-import Tree
+
+import Compression.Huffman.Decoder
 
 import qualified Data.ByteString.Lazy   as BS
 import qualified Data.Binary.BitBuilder as B

@@ -9,13 +9,17 @@ import Test.QuickCheck hiding ((.&.))
 import Test.QuickCheck.All
 import Test.HUnit
 
-import Huffmann
+import Compression.Huffman
 
 import qualified Data.Binary.Strict.Get as BinStrict
 import qualified Data.ByteString        as BS
 import qualified Data.HashMap.Strict    as M
 
-main = mapM_ runTestTT units >> $quickCheckAll
+
+import qualified Encoder as Encoder
+import qualified Decoder as Decoder
+
+main = Encoder.main >> Decoder.main >> mapM_ runTestTT units >> $quickCheckAll
 
 instance Arbitrary BS.ByteString where
     arbitrary = fmap BS.pack arbitrary

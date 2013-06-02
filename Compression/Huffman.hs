@@ -1,7 +1,8 @@
-module Compression.Huffmann where
+module Compression.Huffman where
 
 import Data.Word (Word32, Word8)
-import Tree      (lookupBits, toHuffTree)
+import Compression.Huffman.Encoder
+import Compression.Huffman.Decoder
 
 import qualified Data.Binary.Strict.Get    as Bin
 import qualified Data.Binary.Strict.BitGet as BitGet
@@ -23,7 +24,7 @@ parse32 = Bin.getWord32be
 -- | Encodes the 'BinaryString' with Huffmann
 encode :: S.ByteString -> S.ByteString
 encode bs = toStrictByteString $ foldl appendcode Builder.empty (parse bs)
-    where huff = toHuffTree (Map.toList $ probs bs)
+    where huff = createHuffTree (Map.toList $ probs bs)
           appendcode acc word =
               case lookupBits huff word of
                 Nothing -> error ("Word " ++ show word ++ "missing in Huffmann tree")

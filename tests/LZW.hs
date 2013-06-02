@@ -6,7 +6,7 @@ import Data.Maybe
 import Data.Bits
 import Data.Word
 import Data.Monoid
-import LZW hiding (main)
+import Compression.LZW hiding (main)
 
 import qualified Data.ByteString.Lazy.Char8 as C
 import qualified Data.ByteString.Lazy as BS
