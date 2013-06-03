@@ -3,13 +3,15 @@
 import Control.Monad (liftM, liftM2)
 import Data.Bits
 import Data.Word
-import Debug.Trace   (trace)
+import Data.List     ((\\))
+import Data.Monoid   (mappend)
 
 import Test.QuickCheck hiding ((.&.))
 import Test.QuickCheck.All
 import Test.HUnit
 
 import Compression.Huffman
+import qualified Compression.Huffman.Encoder as E
 
 import qualified Data.Binary.Strict.Get as BinStrict
 import qualified Data.ByteString        as BS
@@ -33,15 +35,10 @@ prop_consume_bytes bs = BS.length bs >= 4 ==>
     let ((Right _), bs') = BinStrict.runGet parse32 bs
     in bs' /= bs
 
-prop_prob_sum_is_one bs = BS.length bs >= 4 ==>
-    let ps = probs bs
-        sm = M.foldl' (+) 0 ps 
+prop_prob_sum_is_one words = not (null words) ==>
+    let ps = probs words
+        sm = foldl (+) 0 (map snd ps)
     in (abs (sm - 1)) < 0.001
-
-prop_contains_all bs =
-    let ps = probs bs
-        words = parse bs
-    in all (\word -> M.member word ps) words
 
 prop_first_ident bs = BS.length bs >= 4 ==>
     let out = parse bs !! 0
@@ -52,6 +49,9 @@ grop_len_mod4 bs =
     let out = parse bs
         len = BS.length bs
     in fromIntegral (length out) == (fromIntegral (len - (len `mod` 4))) / 4
+
+prop_reverse_function bs = BS.length bs > 4 ==>
+    (decode . encode) bs == bs
 
 -- HUnit
 units = map (\(lbl, test) -> TestLabel lbl test) units'
@@ -68,80 +68,95 @@ units = map (\(lbl, test) -> TestLabel lbl test) units'
                    , ("probs_four_entries4", TestCase probs_four_entries4)
                    , ("probs_four_entries5", TestCase probs_four_entries5)
                    , ("probs_four_entries6", TestCase probs_four_entries6)
+                   , ("hufftree_ser_roundtrip", TestCase hufftree_ser_roundtrip)
                    ]
 
 -- HUnit: Probabilities
-probs_one_entry = let ps = probs (to32BS [1])
-                      Just val = M.lookup 1 ps
+probs_one_entry = let ps = probs [1]
+                      Just val = lookup 1 ps
                   in do val @?= 1
 
-probs_two_entries = let ps = probs (to32BS [1, 2])
-                        Just a = M.lookup 1 ps
-                        Just b = M.lookup 2 ps
+probs_two_entries = let ps = probs [1, 2]
+                        Just a = lookup 1 ps
+                        Just b = lookup 2 ps
                     in do a @?= 0.5
                           b @?= 0.5
 
-probs_two_entries2 = let ps = probs (to32BS [1, 1])
-                         Just a = M.lookup 1 ps
+probs_two_entries2 = let ps = probs [1, 1]
+                         Just a = lookup 1 ps
                      in do a @?= 1
 
-probs_three_entries = let ps = probs (to32BS [1, 2, 3])
-                          Just a = M.lookup 1 ps
-                          Just b = M.lookup 2 ps
-                          Just c = M.lookup 3 ps
+probs_three_entries = let ps = probs [1, 2, 3]
+                          Just a = lookup 1 ps
+                          Just b = lookup 2 ps
+                          Just c = lookup 3 ps
                       in do a @?= (1/3)
                             b @?= (1/3)
                             c @?= (1/3)
 
-probs_three_entries2 = let ps = probs (to32BS [1, 2, 1])
-                           Just a = M.lookup 1 ps
-                           Just b = M.lookup 2 ps
+probs_three_entries2 = let ps = probs [1, 2, 1]
+                           Just a = lookup 1 ps
+                           Just b = lookup 2 ps
                        in do a @?= (2/3)
                              b @?= (1/3)
 
-probs_three_entries3 = let ps = probs (to32BS [1, 1, 1])
-                           Just a = M.lookup 1 ps
+probs_three_entries3 = let ps = probs [1, 1, 1]
+                           Just a = lookup 1 ps
                        in do a @?= 1
 
-probs_four_entries = let ps = probs (to32BS [1, 1, 1, 1])
-                         Just a = M.lookup 1 ps
+probs_four_entries = let ps = probs [1, 1, 1, 1]
+                         Just a = lookup 1 ps
                      in do a @?= 1
 
-probs_four_entries2 = let ps = probs (to32BS [1, 1, 1, 2])
-                          Just a = M.lookup 1 ps
-                          Just b = M.lookup 2 ps
+probs_four_entries2 = let ps = probs [1, 1, 1, 2]
+                          Just a = lookup 1 ps
+                          Just b = lookup 2 ps
                       in do a @?= 0.75
                             b @?= 0.25
 
-probs_four_entries3 = let ps = probs (to32BS [1, 1, 2, 2])
-                          Just a = M.lookup 1 ps
-                          Just b = M.lookup 2 ps
+probs_four_entries3 = let ps = probs [1, 1, 2, 2]
+                          Just a = lookup 1 ps
+                          Just b = lookup 2 ps
                       in do a @?= 0.5
                             b @?= 0.5
 
-probs_four_entries4 = let ps = probs (to32BS [1, 2, 2, 2])
-                          Just a = M.lookup 1 ps 
-                          Just b = M.lookup 2 ps 
+probs_four_entries4 = let ps = probs [1, 2, 2, 2]
+                          Just a = lookup 1 ps 
+                          Just b = lookup 2 ps 
                       in do a @?= 0.25
                             b @?= 0.75
 
-probs_four_entries5 = let ps = probs (to32BS [1, 2, 3, 2])
-                          Just a = M.lookup 1 ps
-                          Just b = M.lookup 2 ps
-                          Just c = M.lookup 3 ps
+probs_four_entries5 = let ps = probs [1, 2, 3, 2]
+                          Just a = lookup 1 ps
+                          Just b = lookup 2 ps
+                          Just c = lookup 3 ps
                       in do a @?= 0.25
                             b @?= 0.5
                             c @?= 0.25
 
-probs_four_entries6 = let ps = probs (to32BS [1, 4, 3, 2])
-                          Just a = M.lookup 1 ps 
-                          Just b = M.lookup 2 ps
-                          Just c = M.lookup 3 ps
-                          Just d = M.lookup 4 ps
+probs_four_entries6 = let ps = probs [1, 4, 3, 2]
+                          Just a = lookup 1 ps 
+                          Just b = lookup 2 ps
+                          Just c = lookup 3 ps
+                          Just d = lookup 4 ps
                       in do a @?= 0.25
                             b @?= 0.25
                             c @?= 0.25
                             d @?= 0.25
+
+hufftree_ser_roundtrip = let tree = E.HuffTree (M.fromList [(3 :: Word32, undefined)
+                                                          , (4 :: Word32, undefined)
+                                                          , (5 :: Word32, undefined)
+                                                          , (6 :: Word32, undefined)])
+                                               [True, True, False, False, True, False, False]
+                             bs = E.serializeTree tree
+                             rest = BS.pack [1, 2, 3]
+                             (huff, rest') = readHuff (bs `mappend` rest)
+                         in do M.lookup "11" huff @?= Just 3
+                               M.lookup "10" huff @?= Just 4
+                               M.lookup "01" huff @?= Just 5
+                               M.lookup "00" huff @?= Just 6
+                               rest @?= rest'
 
 -- Utilities
 
@@ -160,12 +175,3 @@ to32 a b c d = shiftL (fromIntegral a) 24
            .|. shiftL (fromIntegral b) 16
            .|. shiftL (fromIntegral c)  8
            .|. (fromIntegral d)
-
-to32BS :: [Word32] -> BS.ByteString
-to32BS = foldr BS.cons BS.empty . fill
-    where fill [] = []
-          fill (x:xs) = let a = fromIntegral (shiftR (0xFF000000 .&. x) 24)
-                            b = fromIntegral (shiftR (0x00FF0000 .&. x) 16)
-                            c = fromIntegral (shiftR (0x0000FF00 .&. x) 8)
-                            d = fromIntegral (0x000000FF .&. x)
-                        in a : b : c : d : fill xs

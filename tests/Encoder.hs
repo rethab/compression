@@ -57,7 +57,7 @@ instance (Arbitrary a) => Arbitrary (Leaves a) where
 
 instance (Arbitrary a, Hashable a, Eq a) => Arbitrary (HuffTree a) where
     arbitrary = do hmap <- liftM M.fromList arbitrary
-                   bits <- suchThat arbitrary (\bs -> length bs == M.size hmap)
+                   bits <- vector (M.size hmap) 
                    return $ HuffTree hmap bits
 
 instance Arbitrary B.BitBuilder where
