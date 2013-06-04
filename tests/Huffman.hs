@@ -1,5 +1,7 @@
 {-# LANGUAGE TemplateHaskell #-}
 
+module Huffman where
+
 import Control.Monad (liftM, liftM2)
 import Data.Bits
 import Data.Word
@@ -9,6 +11,7 @@ import Data.Monoid   (mappend)
 import Test.QuickCheck hiding ((.&.))
 import Test.QuickCheck.All
 import Test.HUnit
+import Debug.Trace (trace)
 
 import Compression.Huffman
 import qualified Compression.Huffman.Encoder as E
@@ -16,6 +19,7 @@ import qualified Compression.Huffman.Encoder as E
 import qualified Data.Binary.Strict.Get as BinStrict
 import qualified Data.ByteString        as BS
 import qualified Data.HashMap.Strict    as M
+import qualified Data.Binary.BitBuilder as B
 
 
 import qualified Encoder as Encoder
@@ -50,8 +54,10 @@ grop_len_mod4 bs =
         len = BS.length bs
     in fromIntegral (length out) == (fromIntegral (len - (len `mod` 4))) / 4
 
-prop_reverse_function bs = BS.length bs > 4 ==>
-    (decode . encode) bs == bs
+-- must be mod 4 because otherwise the tail is truncated thus cannot be compared. only for 32 bit though
+prop_reverse_function bs = not (BS.null bs) && BS.length bs `mod` 4 == 0  ==>
+    let bs' = trace (show $ BS.unpack bs) bs
+    in (decode . encode) bs' == bs'
 
 -- HUnit
 units = map (\(lbl, test) -> TestLabel lbl test) units'
@@ -69,6 +75,9 @@ units = map (\(lbl, test) -> TestLabel lbl test) units'
                    , ("probs_four_entries5", TestCase probs_four_entries5)
                    , ("probs_four_entries6", TestCase probs_four_entries6)
                    , ("hufftree_ser_roundtrip", TestCase hufftree_ser_roundtrip)
+                   , ("decode_huff", TestCase decode_huff)
+                   , ("testdecode", TestCase testdecode)
+                   , ("testencodevalues", TestCase testencodevalues)
                    ]
 
 -- HUnit: Probabilities
@@ -144,10 +153,18 @@ probs_four_entries6 = let ps = probs [1, 4, 3, 2]
                             c @?= 0.25
                             d @?= 0.25
 
+testencodevalues = let hmap = M.fromList [(257, B.singleton False)]
+                       vals = [257]
+                       bits = [False]
+                       hufftree = E.HuffTree hmap vals bits
+                       rawbytes = BS.pack [0, 0, 1, 1]
+                   in do (BS.unpack $ encodevals hufftree rawbytes) @?= [0]
+
 hufftree_ser_roundtrip = let tree = E.HuffTree (M.fromList [(3 :: Word32, undefined)
                                                           , (4 :: Word32, undefined)
                                                           , (5 :: Word32, undefined)
                                                           , (6 :: Word32, undefined)])
+                                               [3, 4, 5, 6]
                                                [True, True, False, False, True, False, False]
                              bs = E.serializeTree tree
                              rest = BS.pack [1, 2, 3]
@@ -157,6 +174,22 @@ hufftree_ser_roundtrip = let tree = E.HuffTree (M.fromList [(3 :: Word32, undefi
                                M.lookup "01" huff @?= Just 5
                                M.lookup "00" huff @?= Just 6
                                rest @?= rest'
+
+decode_huff = let hmap = M.fromList [("1", 42), ("01", 137),  ("001", 111)]
+                  bytes = BS.pack [164] 
+                  expected = BS.pack [0, 0, 0, 42, 0, 0, 0, 137, 0, 0, 0, 111]
+              in do decodeHuff hmap bytes @?= expected
+
+testdecode = let nvals = BS.pack [0, 0, 0, 0, 0, 0, 0, 3]
+                 vals = BS.pack [0, 0, 0, 42, 0, 0, 0, 137, 0, 0, 0, 111]
+                 bits = BS.pack [160]
+                 encoded = BS.pack [165, 160]
+                 combined = nvals `mappend` vals `mappend` bits `mappend` encoded
+             in do BS.unpack (decode combined) @?= [0, 0, 0, 42, 0, 0, 0, 137
+                                              , 0, 0, 0, 111, 0, 0, 0, 42
+                                              , 0, 0, 0, 137, 0, 0, 0, 42
+                                              , 0, 0, 0, 137, 0, 0, 0, 111
+                                              , 0, 0, 0, 111]
 
 -- Utilities
 

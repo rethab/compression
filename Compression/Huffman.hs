@@ -26,8 +26,10 @@ encode bs = let words = parse bs
                 encodedtree = E.serializeTree hufftree
             in encodedtree `mappend` encodedvalues
 
+
 encodevals :: E.HuffTree Word32 -> S.ByteString -> S.ByteString
-encodevals huff bs = let builder = foldl accbit Builder.empty (parse bs)
+encodevals huff bs =
+             let builder = foldl accbit Builder.empty (parse bs)
              in L.toStrict $ Builder.toLazyByteString builder
     where accbit acc word =
             case E.lookupBits huff word of
@@ -39,7 +41,8 @@ decode bs = decodeHuff decoder bs'
     where (decoder, bs') = readHuff bs
 
 decodeHuff :: M.HashMap String Word32-> S.ByteString -> S.ByteString
-decodeHuff dec bs = toBS (readValues dec bs)
+decodeHuff dec bs = let (vals, _) = readValues dec bs
+                    in toBS vals
     where toBS :: [Word32] -> S.ByteString
           toBS = S.concat . map (L.toStrict . BinPut.runPut . BinPut.putWord32be)
 
@@ -48,10 +51,11 @@ decodeHuff dec bs = toBS (readValues dec bs)
 readHuff :: S.ByteString -> (M.HashMap String Word32, S.ByteString)
 readHuff = D.deserialize
 
-readValues :: M.HashMap String Word32 -> S.ByteString -> [Word32]
+readValues :: M.HashMap String Word32 -> S.ByteString -> ([Word32], S.ByteString)
 readValues dec bs = case BitGet.runBitGet bs (readBits dec) of
-                     Right (_, vals) -> vals
+                     Right (nbits, vals) -> (vals, S.drop (nbytes nbits) bs)
                      Left err -> error ("Failed to parse: " ++ err)
+    where nbytes nbits = ceiling (fromIntegral nbits / 8)
 
 -- | Uses the decoder to read a Value and returns the number of bits consumed
 readBits :: M.HashMap String Word32 -> BitGet.BitGet (Int, [Word32])
@@ -59,7 +63,9 @@ readBits dec = go [] 0 []
     where go bitsacc nbits words =
             do done <- BitGet.isEmpty
                if done -- we might have undecoded bits in 'bitsacc'
-                 then if null bitsacc then return (nbits, words) else fail "unconsumed bits"
+                       -- but leaves since they probably come from 
+                       -- stuffing
+                 then return (nbits, words) 
                  else do bit <- BitGet.getBit
                          let bits' = bitsacc ++ [b2c bit]
                          case M.lookup bits' dec of

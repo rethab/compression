@@ -40,6 +40,7 @@ readDecoder bs leaves = case BitGet.runBitGet bs readTree of
                           Right tree -> mkDecoder tree leaves
 
 mkDecoder :: BTree -> [Word32] -> M.HashMap String Word32
+mkDecoder Leaf [val] = M.singleton "1" val
 mkDecoder root values = snd $ go root values [] M.empty
     where go Leaf vals code map = (1, M.insert code (head vals) map)
           go (Node l r) vals code map =

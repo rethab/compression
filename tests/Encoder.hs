@@ -6,6 +6,7 @@ import Control.Monad       (mplus, liftM, liftM2)
 import Data.Bits           (testBit)
 import Data.List           (isPrefixOf, nubBy)
 import Data.Maybe          (isJust)
+import Data.Monoid         (mappend)
 import Data.Hashable
 import Data.Word           (Word32)
 import Test.QuickCheck
@@ -58,7 +59,7 @@ instance (Arbitrary a) => Arbitrary (Leaves a) where
 instance (Arbitrary a, Hashable a, Eq a) => Arbitrary (HuffTree a) where
     arbitrary = do hmap <- liftM M.fromList arbitrary
                    bits <- vector (M.size hmap) 
-                   return $ HuffTree hmap bits
+                   return $ HuffTree hmap (M.keys hmap) bits
 
 instance Arbitrary B.BitBuilder where
     arbitrary = return B.empty
@@ -68,6 +69,14 @@ listweight = foldl (\acc k -> weight k + acc) 0
 height :: Tree a -> Int
 height (Leaf _)  = 1
 height (Node r l) = height r + height l
+
+leaves :: Tree a -> Int
+leaves (Leaf _) = 1
+leaves (Node l r) = leaves l + leaves r
+
+nodes :: Tree a -> Int
+nodes (Leaf _) = 0
+nodes (Node l r) = 1 + nodes l + nodes r
 
 isLeaf :: Tree a -> Bool
 isLeaf (Leaf _) = True
@@ -106,6 +115,12 @@ prop_prefix_free tree = height tree < 40 ==>
         collectCodes (Node l r) = collectCodes l ++ collectCodes r
     in not (any (\code -> any (\other -> code /= other && code `isPrefixOf` other) codes) codes)
 
+prop_none_empty tree =
+    let code = assignCodes tree
+        nonemptycode (Leaf (_, code)) = not $ null code
+        nonemptycode (Node l r) = nonemptycode l || nonemptycode r
+    in nonemptycode code
+
 prop_permutation (Leaves tree) =
     let codes = assignCodes (combineAll tree)
     in all (\(Leaf (c, _)) -> isJust (lookupCode codes c)) tree
@@ -124,22 +139,38 @@ prop_perm_hufftree leaves = not (null leaves) ==>
     in all (\(v, _) -> isJust $ lookupBits hufftree v) leaves
 
 prop_leaves_equals_zeros_in_bits leaves = not (null leaves) ==>
-    let (HuffTree _ bits) = createHuffTree leaves
+    let (HuffTree _ _ bits) = createHuffTree leaves
     in length (filter not bits) == length leaves
 
 prop_first_bytes_are_size :: HuffTree Word32 -> Bool
-prop_first_bytes_are_size tree@(HuffTree hmap _) =
+prop_first_bytes_are_size tree@(HuffTree hmap _ _) =
     let bs = serializeTree tree
     in read64 bs == M.size hmap
 
 prop_bytes_equal_sum :: HuffTree Word32 -> Property
-prop_bytes_equal_sum tree@(HuffTree hmap bits) = length bits > 3 ==>
+prop_bytes_equal_sum tree@(HuffTree hmap vals bits) = length bits > 3 ==>
     let bs = serializeTree tree
         mapsizeb = 8 -- 64 bit integer
         valsizeb = (M.size hmap) * 4 -- 32 bit values
         structurebytes = ceiling ((fromIntegral (length bits)) / 8) -- ceiling to next byte
         expected = mapsizeb + valsizeb + structurebytes
     in S.length bs == expected
+
+prop_leaves_equal_false tree = 
+    let bits = encodeTree tree
+    in leaves tree == length (filter not bits)
+
+prop_nodes_equal_true tree =
+    let bits = encodeTree tree
+    in nodes tree == length (filter id bits)
+
+prop_last_is_false tree = not (isLeaf tree) ==>
+    let bits = encodeTree tree
+    in last bits == False
+
+prop_one_more_leaf_than_nodes tree = height tree < 100 ==>
+    let bits = encodeTree tree
+    in length (filter id bits) + 1 == length (filter not bits)
 
 prop_functor_law_identity :: (Eq a) => Tree a -> Bool
 prop_functor_law_identity tree = fmap id tree == tree
@@ -168,6 +199,11 @@ prop_same_bits_as_in_string values = not (null values) && nubBy (\(a,_) (b,_)-> 
 
 runhunit = mapM_ runTestTT $  map (\(lbl, test) -> TestLabel lbl test) units'
     where units' = [ ("star_sample", TestCase star_sample)
+                   , ("create_huff_tree", TestCase create_huff_tree)
+                   , ("serialize_tree", TestCase serialize_tree)
+                   , ("serialize_tree2", TestCase serialize_tree2)
+                   , ("serialize_tree3", TestCase serialize_tree3)
+                   , ("serialize_tree4", TestCase serialize_tree4)
                    ]
 star_sample = let nodes = [ Leaf ('*', 0.65), Leaf ('+', 0.15), Leaf ('#', 0.1), Leaf ('?', 0.04)
                           , Leaf ('~', 0.02), Leaf ('$', 0.04)]
@@ -180,3 +216,45 @@ star_sample = let nodes = [ Leaf ('*', 0.65), Leaf ('+', 0.15), Leaf ('#', 0.1),
                     lookupCode codes '$' @?= Just "0011"
                     lookupCode codes '?' @?= Just "00100"
                     lookupCode codes '~' @?= Just "00101"
+
+create_huff_tree = let tree = createHuffTree [(123 :: Word32, 1.0)]
+                       (Just builder) = lookupBits tree 123
+                       bytes = L.toStrict $ B.toLazyByteString builder
+                       -- remember that we are filling bits from the left side ;)
+                   in do S.unpack bytes @?= [128]
+
+serialize_tree = let htree = HuffTree (M.insert (123 :: Word32) undefined M.empty)
+                                      [123] [False]
+                     serialized = serializeTree htree
+                     size = S.pack [0, 0, 0, 0, 0, 0, 0, 1]
+                     vals = S.pack [0, 0, 0, 123]
+                     tree = S.pack [0]
+                     expected = size `mappend` vals `mappend` tree
+                 in do serialized @?= expected 
+
+serialize_tree2 = let htree = HuffTree (M.insert (131328 :: Word32) undefined M.empty)
+                                       [131328] [False]
+                      serialized = serializeTree htree
+                      size = S.pack [0, 0, 0, 0, 0, 0, 0, 1]
+                      vals = S.pack [0, 2, 1, 0]
+                      tree = S.pack [0]
+                      expected = size `mappend` vals `mappend` tree
+                  in do serialized @?= expected 
+
+serialize_tree3 = let htree = HuffTree (M.insert (117571840 :: Word32) undefined M.empty)
+                                       [117571840] [False]
+                      serialized = serializeTree htree
+                      size = S.pack [0, 0, 0, 0, 0, 0, 0, 1]
+                      vals = S.pack [7, 2, 1, 0]
+                      tree = S.pack [0]
+                      expected = size `mappend` vals `mappend` tree
+                  in do serialized @?= expected 
+
+serialize_tree4 = let htree = HuffTree (M.fromList [(101188357, undefined), (134350087, undefined)])
+                                       [101188357, 134350087] [True, False, False] :: HuffTree Word32
+                      serialized = serializeTree htree
+                      size = S.pack [0, 0, 0, 0, 0, 0, 0, 2]
+                      vals = S.pack [6, 8, 3, 5, 8, 2, 5, 7]
+                      tree = S.pack [128]
+                      expected = size `mappend` vals `mappend` tree
+                  in do S.unpack serialized @?= S.unpack expected 

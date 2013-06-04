@@ -30,7 +30,10 @@ instance Functor Tree where
 --       II. no: pop node from stack. traverse right. goto 1
 type StructureBits = [Bool]
 
-data HuffTree a = HuffTree (M.HashMap a B.BitBuilder) StructureBits
+-- the list of values is actually a dupicate of the hashmap. it is required
+-- since order of the values is crucial in order to serialize it and the
+-- hashmap discards the order
+data HuffTree a = HuffTree (M.HashMap a B.BitBuilder) [a] StructureBits
     deriving (Show)
 
 class Serializable a where
@@ -48,22 +51,23 @@ instance Serializable Int where
 
 -- | Searches a the bits for a value
 lookupBits :: (Eq a, Hashable a) => HuffTree a -> a -> Maybe B.BitBuilder
-lookupBits (HuffTree map _) needle = M.lookup needle map
+lookupBits (HuffTree map _ _) needle = M.lookup needle map
 
 -- | Creates a Huffmann Tree from a List of Values and their probablities
 createHuffTree :: (Eq a, Hashable a) => [(a, Float)] -> HuffTree a
 createHuffTree vals = let tree = (assignCodes . combineAll . map Leaf) vals
                           hmap = (fmap toBitBuilder . toHashMap) tree
                           treebits = encodeTree tree
-                      in HuffTree hmap treebits
-    where encodeTree :: Tree (a, String) -> StructureBits
-          encodeTree (Leaf _) = [False]
-          encodeTree (Node l r) = encodeTree l ++ encodeTree r
+                      in HuffTree hmap (map fst vals ) treebits
 
-          toHashMap :: (Eq a, Hashable a) => Tree (a, String) -> M.HashMap a String
-          toHashMap tree = go tree M.empty
-            where go (Leaf (a, bits)) map = M.insert a bits map
-                  go (Node l r) map = go l map `M.union` go r map
+encodeTree :: Tree (a, String) -> StructureBits
+encodeTree (Leaf _) = [False]
+encodeTree (Node l r) = True : (encodeTree l ++ encodeTree r)
+
+toHashMap :: (Eq a, Hashable a) => Tree (a, String) -> M.HashMap a String
+toHashMap tree = go tree M.empty
+    where go (Leaf (a, bits)) map = M.insert a bits map
+          go (Node l r) map = go l map `M.union` go r map
 
 
 -- | Encodes a string of bits into a builder
@@ -75,9 +79,9 @@ toBitBuilder = foldl (\acc char -> B.append acc (c2b char)) B.empty
 
 -- | Serializes the Tree into a ByteString
 serializeTree :: (Serializable a) => HuffTree a -> S.ByteString
-serializeTree (HuffTree hmap treebits) = serialize (M.size hmap)
-                               `mappend` S.concat (map serialize (M.keys hmap))
-                               `mappend` serialize treebits
+serializeTree (HuffTree _ vals treebits) = serialize (length vals)
+                                    `mappend` S.concat (map serialize vals)
+                                    `mappend` serialize treebits
 
 -- | Combines all 'Tree's according to Huffmann into one single 'Tree'
 combineAll :: [Tree (a, Float)] -> Tree (a, Float)
@@ -100,6 +104,7 @@ combineSmallest (a:b:xs)
 
 -- | Assignes the bits to each node according to Huffmann
 assignCodes :: Tree (a, Float) -> Tree (a, String)
+assignCodes (Leaf (a, _)) = Leaf (a, "1")
 assignCodes root = go root []
     where go (Leaf (a, w)) code = Leaf (a, code)
           go (Node l r) code    = Node (go l (code++"1"))
