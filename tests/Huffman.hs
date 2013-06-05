@@ -76,8 +76,10 @@ units = map (\(lbl, test) -> TestLabel lbl test) units'
                    , ("probs_four_entries6", TestCase probs_four_entries6)
                    , ("hufftree_ser_roundtrip", TestCase hufftree_ser_roundtrip)
                    , ("decode_huff", TestCase decode_huff)
+                   , ("decode_huff2", TestCase decode_huff2)
                    , ("testdecode", TestCase testdecode)
                    , ("testencodevalues", TestCase testencodevalues)
+                   , ("count_remaing", TestCase count_remaining)
                    ]
 
 -- HUnit: Probabilities
@@ -158,7 +160,9 @@ testencodevalues = let hmap = M.fromList [(257, B.singleton False)]
                        bits = [False]
                        hufftree = E.HuffTree hmap vals bits
                        rawbytes = BS.pack [0, 0, 1, 1]
-                   in do (BS.unpack $ encodevals hufftree rawbytes) @?= [0]
+                       (off, bytes) = encodevals hufftree rawbytes
+                   in do BS.unpack bytes @?= [0]
+                         off @?= 7
 
 hufftree_ser_roundtrip = let tree = E.HuffTree (M.fromList [(3 :: Word32, undefined)
                                                           , (4 :: Word32, undefined)
@@ -166,19 +170,25 @@ hufftree_ser_roundtrip = let tree = E.HuffTree (M.fromList [(3 :: Word32, undefi
                                                           , (6 :: Word32, undefined)])
                                                [3, 4, 5, 6]
                                                [True, True, False, False, True, False, False]
-                             bs = E.serializeTree tree
+                             bs = E.serializeTree tree 3
                              rest = BS.pack [1, 2, 3]
-                             (huff, rest') = readHuff (bs `mappend` rest)
+                             (huff, off, rest') = readHuff (bs `mappend` rest)
                          in do M.lookup "11" huff @?= Just 3
                                M.lookup "10" huff @?= Just 4
                                M.lookup "01" huff @?= Just 5
                                M.lookup "00" huff @?= Just 6
                                rest @?= rest'
+                               off @?= 3
 
 decode_huff = let hmap = M.fromList [("1", 42), ("01", 137),  ("001", 111)]
                   bytes = BS.pack [164] 
                   expected = BS.pack [0, 0, 0, 42, 0, 0, 0, 137, 0, 0, 0, 111]
-              in do decodeHuff hmap bytes @?= expected
+              in do decodeHuff hmap bytes 0 @?= expected
+
+decode_huff2 = let hmap = M.fromList [("1",1677824), ("0",84214021)]
+                   bytes = BS.pack [64] 
+                   expected = [5,5,1,5,1,0,4,8]
+               in do BS.unpack (decodeHuff hmap bytes 0) @?= expected
 
 testdecode = let nvals = BS.pack [0, 0, 0, 0, 0, 0, 0, 3]
                  vals = BS.pack [0, 0, 0, 42, 0, 0, 0, 137, 0, 0, 0, 111]
@@ -190,6 +200,25 @@ testdecode = let nvals = BS.pack [0, 0, 0, 0, 0, 0, 0, 3]
                                               , 0, 0, 0, 137, 0, 0, 0, 42
                                               , 0, 0, 0, 137, 0, 0, 0, 111
                                               , 0, 0, 0, 111]
+
+count_remaining = let one = B.singleton False
+                      two = one `mappend` one
+                      three = two `mappend` one
+                      four = three `mappend` one
+                      five = four `mappend` one
+                      six = five `mappend` one
+                      seven = six `mappend` one
+                      eight = seven `mappend` one
+                      nine = eight `mappend` one
+                  in do countRemaining one @?= 7
+                        countRemaining two @?= 6
+                        countRemaining three @?= 5
+                        countRemaining four @?= 4
+                        countRemaining five @?= 3
+                        countRemaining six @?= 2
+                        countRemaining seven @?= 1
+                        countRemaining eight @?= 0
+                        countRemaining nine @?= 7
 
 -- Utilities
 

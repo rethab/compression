@@ -57,7 +57,7 @@ blackbox_deserialize = let size = S.pack [0, 0, 0, 0, 0, 0, 0, 4]
                            leaves = S.pack [0, 0, 0, 3, 0, 0, 0, 4, 0, 0, 0, 5, 0, 0, 0, 6]
                            structure = S.pack [200]
                            following = S.pack [42, 125] 
-                           (dec, rest) = deserialize (size `mappend` leaves `mappend` structure `mappend` following)
+                           (dec, off, rest) = deserialize (size `mappend` leaves `mappend` structure `mappend` following)
                        in do M.lookup "11" dec @?= Just 3
                              M.lookup "10" dec @?= Just 4
                              M.lookup "01" dec @?= Just 5
@@ -68,7 +68,7 @@ blackbox_deserialize2 = let size = S.pack [0, 0, 0, 0, 0, 0, 0, 4]
                             leaves = S.pack [0, 0, 0, 3, 0, 0, 0, 4, 0, 0, 0, 5, 0, 0, 0, 6]
                             structure = S.pack [200]
                             following = S.pack [42, 125] 
-                            (dec, rest) = deserialize (size `mappend` leaves
+                            (dec, off, rest) = deserialize (size `mappend` leaves
                                                             `mappend` structure
                                                             `mappend` following)
                         in do M.lookup "11" dec @?= Just 3
@@ -81,7 +81,7 @@ blackbox_deserialize3 = let size = S.pack [0, 0, 0, 0, 0, 0, 0, 3]
                             vals = S.pack [0, 0, 0, 42, 0, 0, 0, 137, 0, 0, 0 ,111]
                             bits = S.pack [160] 
                             combined = size `mappend` vals `mappend` bits
-                            (huff, rest) = deserialize combined
+                            (huff, off, rest) = deserialize combined
                         in do M.lookup "1" huff @?= Just 42
                               M.lookup "00" huff @?= Just 111
                               M.lookup "01" huff @?= Just 137
@@ -104,7 +104,7 @@ single_leaf_decoder = let size = S.pack [0, 0, 0, 0, 0, 0, 0, 1]
                           vals = S.pack [0, 2, 1, 0]
                           treebits = S.pack [0]
                           combined = size `mappend` vals `mappend` treebits
-                          (dec, rest) = deserialize combined
+                          (dec, off, rest) = deserialize combined
                       in do M.lookup "1" dec @?= Just 131328
                             S.unpack rest @?= []
 

@@ -142,18 +142,12 @@ prop_leaves_equals_zeros_in_bits leaves = not (null leaves) ==>
     let (HuffTree _ _ bits) = createHuffTree leaves
     in length (filter not bits) == length leaves
 
-prop_first_bytes_are_size :: HuffTree Word32 -> Bool
-prop_first_bytes_are_size tree@(HuffTree hmap _ _) =
-    let bs = serializeTree tree
-    in read64 bs == M.size hmap
-
 prop_bytes_equal_sum :: HuffTree Word32 -> Property
 prop_bytes_equal_sum tree@(HuffTree hmap vals bits) = length bits > 3 ==>
-    let bs = serializeTree tree
-        mapsizeb = 8 -- 64 bit integer
+    let bs = serializeTree tree 0
         valsizeb = (M.size hmap) * 4 -- 32 bit values
         structurebytes = ceiling ((fromIntegral (length bits)) / 8) -- ceiling to next byte
-        expected = mapsizeb + valsizeb + structurebytes
+        expected = valsizeb + structurebytes
     in S.length bs == expected
 
 prop_leaves_equal_false tree = 
@@ -225,7 +219,7 @@ create_huff_tree = let tree = createHuffTree [(123 :: Word32, 1.0)]
 
 serialize_tree = let htree = HuffTree (M.insert (123 :: Word32) undefined M.empty)
                                       [123] [False]
-                     serialized = serializeTree htree
+                     serialized = serializeTree htree 0
                      size = S.pack [0, 0, 0, 0, 0, 0, 0, 1]
                      vals = S.pack [0, 0, 0, 123]
                      tree = S.pack [0]
@@ -234,7 +228,7 @@ serialize_tree = let htree = HuffTree (M.insert (123 :: Word32) undefined M.empt
 
 serialize_tree2 = let htree = HuffTree (M.insert (131328 :: Word32) undefined M.empty)
                                        [131328] [False]
-                      serialized = serializeTree htree
+                      serialized = serializeTree htree 0
                       size = S.pack [0, 0, 0, 0, 0, 0, 0, 1]
                       vals = S.pack [0, 2, 1, 0]
                       tree = S.pack [0]
@@ -243,7 +237,7 @@ serialize_tree2 = let htree = HuffTree (M.insert (131328 :: Word32) undefined M.
 
 serialize_tree3 = let htree = HuffTree (M.insert (117571840 :: Word32) undefined M.empty)
                                        [117571840] [False]
-                      serialized = serializeTree htree
+                      serialized = serializeTree htree 0
                       size = S.pack [0, 0, 0, 0, 0, 0, 0, 1]
                       vals = S.pack [7, 2, 1, 0]
                       tree = S.pack [0]
@@ -252,7 +246,7 @@ serialize_tree3 = let htree = HuffTree (M.insert (117571840 :: Word32) undefined
 
 serialize_tree4 = let htree = HuffTree (M.fromList [(101188357, undefined), (134350087, undefined)])
                                        [101188357, 134350087] [True, False, False] :: HuffTree Word32
-                      serialized = serializeTree htree
+                      serialized = serializeTree htree 0
                       size = S.pack [0, 0, 0, 0, 0, 0, 0, 2]
                       vals = S.pack [6, 8, 3, 5, 8, 2, 5, 7]
                       tree = S.pack [128]

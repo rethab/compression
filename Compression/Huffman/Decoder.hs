@@ -2,7 +2,7 @@ module Compression.Huffman.Decoder where
 
 import Control.Arrow (first)
 import Control.Monad (liftM2)
-import Data.Word     (Word32, Word64)
+import Data.Word     (Word8, Word32, Word64)
 
 import qualified Data.Binary.Strict.BitGet as BitGet
 import qualified Data.Binary.Strict.Get    as BinGet
@@ -11,15 +11,22 @@ import qualified Data.HashMap.Strict       as M
 
 data BTree = Node BTree BTree | Leaf deriving (Show)
 
-deserialize :: S.ByteString -> (M.HashMap String Word32, S.ByteString)
+deserialize :: S.ByteString -> (M.HashMap String Word32, Int, S.ByteString)
 deserialize bs = let (nleaves, bs') = (first fromIntegral) $ read64 bs
                      (leaves, bs'') = read32 bs' nleaves
-                     decoder = readDecoder bs'' leaves
+                     (off, bs''') = first fromIntegral $ read8 bs''
+                     decoder = readDecoder bs''' leaves
                      -- assumption: a binary tree (not necessarily balanced)
                      -- with n leaves has (n-1) nodes. thus the number of bits
                      -- read is the sum of the two
                      nbytes = ceiling $ (fromIntegral (nleaves + (nleaves - 1))) / 8
-                 in (decoder, S.drop nbytes bs'')
+                 in (decoder, off, S.drop nbytes bs'')
+
+read8 :: S.ByteString -> (Word8, S.ByteString)
+read8 bs = let (res, bs') = BinGet.runGet BinGet.getWord8 bs
+           in case res of
+                Left e -> error e
+                Right val -> (val, bs')
 
 read32 :: S.ByteString -> Int -> ([Word32], S.ByteString)
 read32 bs 0 = ([], bs)

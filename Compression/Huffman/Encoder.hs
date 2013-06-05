@@ -4,7 +4,7 @@ module Compression.Huffman.Encoder where
 
 import Data.Hashable
 import Data.Monoid         (mappend)
-import Data.Word           (Word32)
+import Data.Word           (Word8, Word32)
 
 import qualified Data.Binary.BitBuilder    as B
 import qualified Data.Binary.Put           as BinPut
@@ -49,6 +49,9 @@ instance Serializable Word32 where
 instance Serializable Int where
      serialize  = L.toStrict . BinPut.runPut . BinPut.putWord64be . fromIntegral
 
+instance Serializable Word8 where
+    serialize = L.toStrict . BinPut.runPut . BinPut.putWord8
+
 -- | Searches a the bits for a value
 lookupBits :: (Eq a, Hashable a) => HuffTree a -> a -> Maybe B.BitBuilder
 lookupBits (HuffTree map _ _) needle = M.lookup needle map
@@ -78,10 +81,10 @@ toBitBuilder = foldl (\acc char -> B.append acc (c2b char)) B.empty
           c2b '1' = B.singleton True
 
 -- | Serializes the Tree into a ByteString
-serializeTree :: (Serializable a) => HuffTree a -> S.ByteString
-serializeTree (HuffTree _ vals treebits) = serialize (length vals)
-                                    `mappend` S.concat (map serialize vals)
-                                    `mappend` serialize treebits
+serializeTree :: (Serializable a) => HuffTree a -> Word8 -> S.ByteString
+serializeTree (HuffTree _ vals treebits) offset = serialize treebits 
+                                        `mappend` serialize offset
+                                        `mappend` S.concat (map serialize vals)
 
 -- | Combines all 'Tree's according to Huffmann into one single 'Tree'
 combineAll :: [Tree (a, Float)] -> Tree (a, Float)
