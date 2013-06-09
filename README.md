@@ -1,11 +1,19 @@
-# LZW Compressor
+# Compressor
+Currently supports LZW and Huffman
 
-## Benchs
+## Benchs (all values in bytes)
+Original File Size: 10463 
 
-### Commit 67da2f8
- - Compression of 750k German Text: 1.685s
- - Decompression of the Same Text: 1m24.841s
+LZW uses 32 bit sized entries in the tables, which probably is somewhat suboptimal.
 
-### Commit 433b16 (constant insert into dict in decompression)
- - Compression of 750k German Text: 1.752
- - Decompression of the Same Text: 0.413s
+# 32 Bit Huffman
+- Huffman only: 11433
+- LZW, then Huffman: 12181
+
+# 16 Bit Huffman
+- Huffman only: 6713
+- LZW, then Huffman: 9857
+
+# 8 Bit Huffman
+- Huffman only: 6286
+- LZW, then Huffman: 8449
