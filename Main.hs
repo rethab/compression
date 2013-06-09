@@ -13,7 +13,7 @@ import Compression.Huffman (encode, decode)
 main :: IO ()
 main = do
     args <- getArgs
-    when (length args /= 3) (usage >> exitFailure)
+    when (length args /= 3) usage
     let mode = args !! 0
         src = args !! 1
         dst = args !! 2
@@ -27,6 +27,7 @@ usage = do putStrLn "[mode] source destination"
            let mods = map fst opts
            putStrLn " where mode is one of:"
            putStrLn $ "   " ++ show mods
+           exitFailure
 
 
 opts = [("enc", encode), ("comp", compress), ("encomp", encode . compress)
