@@ -26,14 +26,14 @@
  - 3. Obviously, we want to reconstruct all the values from the encoded bit-sequence.
  -    This list of all values, will be assigned depth-first to all leaves of the tree.
  -
- - 4. All values are incoded in a sequence of bits. Codes can be of arbitrary size and
+ - 4. All values are encoded in a sequence of bits. Codes can be of arbitrary size and
  -    in the last byte, an offset of bits is to be ignored (see 2.).
  -}
 module Compression.Huffman where
 
 import Control.Applicative ((<$>))
 import Data.Monoid         (mappend)
-import Data.Word           (Word32, Word8)
+import Data.Word           (Word8)
 
 import qualified Data.Binary.Strict.Get    as Bin
 import qualified Data.Binary.Strict.BitGet as BitGet
@@ -48,16 +48,16 @@ import qualified Compression.Huffman.Decoder as D
 
 -- | Encodes the 'BinaryString' with Huffmann
 encode :: S.ByteString -> S.ByteString
-encode bs = let wrds = parse bs
+encode bs = let wrds = S.unpack bs
                 hufftree = E.createHuffTree (probs wrds)
                 (off, encvals) = encodevals hufftree bs
                 encodedtree = E.serializeTree hufftree off
             in encodedtree `mappend` encvals
 
 
-encodevals :: E.HuffTree Word32 -> S.ByteString -> (Word8, S.ByteString)
+encodevals :: E.HuffTree Word8 -> S.ByteString -> (Word8, S.ByteString)
 encodevals huff bs =
-             let builder = foldl (accbit huff) Builder.empty (parse bs)
+             let builder = foldl (accbit huff) Builder.empty (S.unpack bs)
                  bytes = L.toStrict (Builder.toLazyByteString builder)
                  off = countRemaining builder
              in (off, bytes)
@@ -81,21 +81,21 @@ decode :: S.ByteString -> S.ByteString
 decode bs = decodeHuff decoder bs' (fromIntegral off)
     where (decoder, off, bs') = readHuff bs
 
-decodeHuff :: M.HashMap String Word32-> S.ByteString -> Int -> S.ByteString
+decodeHuff :: M.HashMap String Word8 -> S.ByteString -> Int -> S.ByteString
 decodeHuff dec bs off = let (vals, _) = readValues dec bs off
                     in toBS vals
-    where toBS :: [Word32] -> S.ByteString
-          toBS = S.concat . map (L.toStrict . BinPut.runPut . BinPut.putWord32be)
+    where toBS :: [Word8] -> S.ByteString
+          toBS = S.concat . map (L.toStrict . BinPut.runPut . BinPut.putWord8)
 
 -- | Reads a Huffmann tree from the 'ByteString' and returns the
 --   Huffmann-Tree  along with the rest of the 'ByteString'
-readHuff :: S.ByteString -> (M.HashMap String Word32, Word8, S.ByteString)
+readHuff :: S.ByteString -> (M.HashMap String Word8, Word8, S.ByteString)
 readHuff = D.deserialize
 
-readValues :: M.HashMap String Word32
+readValues :: M.HashMap String Word8
            -> S.ByteString
            -> Int
-           -> ([Word32], S.ByteString)
+           -> ([Word8], S.ByteString)
 readValues dec bs off =
     case BitGet.runBitGet bs (readBits dec off) of
       Right (nbits, vals) -> (vals, S.drop (nbytes nbits) bs)
@@ -104,7 +104,7 @@ readValues dec bs off =
 
 -- | Uses the decoder to read a Value and returns the number of bits consumed.
 --   in the last byte, 'offset' bits are discarded
-readBits :: M.HashMap String Word32 -> Int -> BitGet.BitGet (Int, [Word32])
+readBits :: M.HashMap String Word8 -> Int -> BitGet.BitGet (Int, [Word8])
 readBits dec offset = go [] 0 []
     where go bitsacc nbits wrds =
             do done <- BitGet.isEmpty
@@ -125,13 +125,8 @@ readBits dec offset = go [] 0 []
           b2c False = '0'
 
 -- | Finds the probabilities of all elements in the 'ByteString'
-probs :: [Word32] -> [(Word32, Float)]
+probs :: [Word8] -> [(Word8, Float)]
 probs wrds = let occurences = foldl add M.empty wrds
                  add map word = M.insertWith (+) word 1 map
                  elems = fromIntegral (length wrds)
              in M.toList (M.map (/elems) occurences)
-
-parse :: S.ByteString -> [Word32]
-parse bs = case Bin.runGet Bin.getWord32be bs of
-             (Right word, bs') -> word : parse bs'
-             (Left _, _) -> []
