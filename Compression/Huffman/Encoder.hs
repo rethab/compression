@@ -4,7 +4,7 @@ module Compression.Huffman.Encoder where
 
 import Data.Hashable
 import Data.Monoid         (mappend)
-import Data.Word           (Word8, Word32)
+import Data.Word           (Word8)
 
 import qualified Data.Binary.BitBuilder    as B
 import qualified Data.Binary.Put           as BinPut
@@ -42,9 +42,6 @@ class Serializable a where
 instance Serializable StructureBits where
     serialize = toBS . foldl mappend B.empty . map B.singleton
       where toBS = L.toStrict . B.toLazyByteString
-
-instance Serializable Word32 where
-     serialize  = L.toStrict . BinPut.runPut . BinPut.putWord32be 
 
 instance Serializable Int where
      serialize  = L.toStrict . BinPut.runPut . BinPut.putWord64be . fromIntegral

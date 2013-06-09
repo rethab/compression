@@ -2,7 +2,7 @@ module Compression.Huffman.Decoder where
 
 import Control.Arrow (first)
 import Control.Monad (liftM2)
-import Data.Word     (Word8, Word32, Word64)
+import Data.Word     (Word8)
 
 import qualified Data.Binary.Strict.BitGet as BitGet
 import qualified Data.Binary.Strict.Get    as BinGet
@@ -11,7 +11,7 @@ import qualified Data.HashMap.Strict       as M
 
 data BTree = Node BTree BTree | Leaf deriving (Show, Eq)
 
-deserialize :: S.ByteString -> (M.HashMap String Word32, Word8, S.ByteString)
+deserialize :: S.ByteString -> (M.HashMap String Word8, Word8, S.ByteString)
 deserialize bs = let (tree, bs') = decodeTree bs
                      (off, bs'') = read8 bs'
                      (dec, bs''') = makeDecoder tree bs''
@@ -23,13 +23,13 @@ read8 bs = let (res, bs') = BinGet.runGet BinGet.getWord8 bs
                 Left e -> error e
                 Right val -> (val, bs')
 
-read32 :: S.ByteString -> (Word32, S.ByteString)
-read32 bs = let (res, bs') = BinGet.runGet BinGet.getWord32be bs
+read32 :: S.ByteString -> (Word8, S.ByteString)
+read32 bs = let (res, bs') = BinGet.runGet BinGet.getWord8 bs
              in case res of
                   Left e -> error e
                   Right val -> (val, bs')
 
-makeDecoder :: BTree -> S.ByteString -> (M.HashMap String Word32, S.ByteString)
+makeDecoder :: BTree -> S.ByteString -> (M.HashMap String Word8, S.ByteString)
 makeDecoder Leaf bs = first (M.singleton "1") (read32 bs)
 makeDecoder tree bs = go tree bs [] M.empty
     where go Leaf bs code hmap = first (\x -> M.insert code x hmap) (read32 bs)
