@@ -2,10 +2,12 @@
 *.o
 *.tix
 *.zip
+*.html
 .hpc
 dist/
 
 lzw
 runtests
+tests/Hpc
 
 big.txt
