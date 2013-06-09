@@ -145,9 +145,8 @@ prop_leaves_equals_zeros_in_bits leaves = not (null leaves) ==>
 prop_bytes_equal_sum :: HuffTree Word32 -> Property
 prop_bytes_equal_sum tree@(HuffTree hmap vals bits) = length bits > 3 ==>
     let bs = serializeTree tree 0
-        valsizeb = (M.size hmap) * 4 -- 32 bit values
         structurebytes = ceiling ((fromIntegral (length bits)) / 8) -- ceiling to next byte
-        expected = valsizeb + structurebytes
+        expected = structurebytes + 1 + (length vals) * 4
     in S.length bs == expected
 
 prop_leaves_equal_false tree = 
@@ -194,10 +193,14 @@ prop_same_bits_as_in_string values = not (null values) && nubBy (\(a,_) (b,_)-> 
 runhunit = mapM_ runTestTT $  map (\(lbl, test) -> TestLabel lbl test) units'
     where units' = [ ("star_sample", TestCase star_sample)
                    , ("create_huff_tree", TestCase create_huff_tree)
+                   , ("create_huff_tree2", TestCase create_huff_tree2)
+                   , ("create_huff_tree3", TestCase create_huff_tree3)
                    , ("serialize_tree", TestCase serialize_tree)
                    , ("serialize_tree2", TestCase serialize_tree2)
                    , ("serialize_tree3", TestCase serialize_tree3)
                    , ("serialize_tree4", TestCase serialize_tree4)
+                   , ("test_leavesvals", TestCase test_leavesvals)
+                   , ("test_leavesvals2", TestCase test_leavesvals2)
                    ]
 star_sample = let nodes = [ Leaf ('*', 0.65), Leaf ('+', 0.15), Leaf ('#', 0.1), Leaf ('?', 0.04)
                           , Leaf ('~', 0.02), Leaf ('$', 0.04)]
@@ -217,38 +220,69 @@ create_huff_tree = let tree = createHuffTree [(123 :: Word32, 1.0)]
                        -- remember that we are filling bits from the left side ;)
                    in do S.unpack bytes @?= [128]
 
+-- should reorder values in list of values and put the most one most likely
+-- to occur first
+create_huff_tree2 = let probs =  [ (252644608, 0.25)
+                                 , (84020489, 0.5)
+                                 , (101583631, 0.25) ] :: [(Word32, Float)]
+                        (HuffTree _ vals bits) = createHuffTree probs
+                    in do head vals @?= 84020489
+                          bits @?= [True, False, True, False, False]
+
+create_huff_tree3 = let probs =  [ (252644608, 0.5)
+                                 , (84020489, 0.25)
+                                 , (101583631, 0.25) ] :: [(Word32, Float)]
+                        (HuffTree hmap _ _) = createHuffTree probs
+                        wrds = S.unpack . L.toStrict . B.toLazyByteString
+                        Just b1 = M.lookup 252644608 hmap
+                        Just b2 = M.lookup 84020489 hmap
+                        Just b3 = M.lookup 101583631 hmap
+                    in do wrds b1 @?= [128]
+                          wrds b2 @?= [64]
+                          wrds b3 @?= [0]
+
 serialize_tree = let htree = HuffTree (M.insert (123 :: Word32) undefined M.empty)
                                       [123] [False]
-                     serialized = serializeTree htree 0
-                     size = S.pack [0, 0, 0, 0, 0, 0, 0, 1]
-                     vals = S.pack [0, 0, 0, 123]
-                     tree = S.pack [0]
-                     expected = size `mappend` vals `mappend` tree
+                     serialized = S.unpack $ serializeTree htree 3
+                     tree = [0]
+                     off = [3]
+                     vals = [0, 0, 0, 123]
+                     expected = tree ++ off ++ vals
                  in do serialized @?= expected 
 
 serialize_tree2 = let htree = HuffTree (M.insert (131328 :: Word32) undefined M.empty)
                                        [131328] [False]
-                      serialized = serializeTree htree 0
-                      size = S.pack [0, 0, 0, 0, 0, 0, 0, 1]
-                      vals = S.pack [0, 2, 1, 0]
-                      tree = S.pack [0]
-                      expected = size `mappend` vals `mappend` tree
+                      serialized = S.unpack $ serializeTree htree 7
+                      tree = [0]
+                      off = [7]
+                      vals = [0, 2, 1, 0]
+                      expected = tree ++ off ++ vals
                   in do serialized @?= expected 
 
 serialize_tree3 = let htree = HuffTree (M.insert (117571840 :: Word32) undefined M.empty)
                                        [117571840] [False]
-                      serialized = serializeTree htree 0
-                      size = S.pack [0, 0, 0, 0, 0, 0, 0, 1]
-                      vals = S.pack [7, 2, 1, 0]
-                      tree = S.pack [0]
-                      expected = size `mappend` vals `mappend` tree
+                      serialized = S.unpack $ serializeTree htree 0
+                      tree = [0]
+                      off = [0]
+                      vals = [7, 2, 1, 0]
+                      expected = tree ++ off ++ vals
                   in do serialized @?= expected 
 
 serialize_tree4 = let htree = HuffTree (M.fromList [(101188357, undefined), (134350087, undefined)])
                                        [101188357, 134350087] [True, False, False] :: HuffTree Word32
-                      serialized = serializeTree htree 0
-                      size = S.pack [0, 0, 0, 0, 0, 0, 0, 2]
-                      vals = S.pack [6, 8, 3, 5, 8, 2, 5, 7]
-                      tree = S.pack [128]
-                      expected = size `mappend` vals `mappend` tree
-                  in do S.unpack serialized @?= S.unpack expected 
+                      serialized = S.unpack $ serializeTree htree 2
+                      tree = [128]
+                      off = [2]
+                      vals = [6, 8, 3, 5, 8, 2, 5, 7]
+                      expected = tree ++ off ++ vals
+                  in do serialized @?= expected 
+
+test_leavesvals = let tree = Node (Node (Leaf (1, undefined))
+                                        (Leaf (2, undefined)))
+                                  (Leaf (3, undefined))
+                      vals = leavesvals tree
+                  in vals @?= [1, 2, 3]
+
+test_leavesvals2 = let tree = Node (Leaf (2, undefined)) (Leaf (3, undefined))
+                       vals = leavesvals tree
+                   in vals @?= [2, 3]

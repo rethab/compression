@@ -54,14 +54,19 @@ instance Serializable Word8 where
 
 -- | Searches a the bits for a value
 lookupBits :: (Eq a, Hashable a) => HuffTree a -> a -> Maybe B.BitBuilder
-lookupBits (HuffTree map _ _) needle = M.lookup needle map
+lookupBits (HuffTree hmap _ _) needle = M.lookup needle hmap
 
 -- | Creates a Huffmann Tree from a List of Values and their probablities
 createHuffTree :: (Eq a, Hashable a) => [(a, Float)] -> HuffTree a
 createHuffTree vals = let tree = (assignCodes . combineAll . map Leaf) vals
                           hmap = (fmap toBitBuilder . toHashMap) tree
                           treebits = encodeTree tree
-                      in HuffTree hmap (map fst vals ) treebits
+                          orderedvals = leavesvals tree
+                      in HuffTree hmap orderedvals treebits
+
+leavesvals :: Tree (a, b) -> [a]
+leavesvals (Leaf (v, _)) = [v]
+leavesvals (Node l r) = leavesvals l ++ leavesvals r
 
 encodeTree :: Tree (a, String) -> StructureBits
 encodeTree (Leaf _) = [False]

@@ -46,13 +46,10 @@ import qualified Data.HashMap.Strict       as M
 import qualified Compression.Huffman.Encoder as E
 import qualified Compression.Huffman.Decoder as D
 
-parse32 :: Bin.Get Word32
-parse32 = Bin.getWord32be
-
 -- | Encodes the 'BinaryString' with Huffmann
 encode :: S.ByteString -> S.ByteString
-encode bs = let words = parse bs
-                hufftree = E.createHuffTree (probs words)
+encode bs = let wrds = parse bs
+                hufftree = E.createHuffTree (probs wrds)
                 (off, encvals) = encodevals hufftree bs
                 encodedtree = E.serializeTree hufftree off
             in encodedtree `mappend` encvals
@@ -60,14 +57,15 @@ encode bs = let words = parse bs
 
 encodevals :: E.HuffTree Word32 -> S.ByteString -> (Word8, S.ByteString)
 encodevals huff bs =
-             let builder = foldl accbit Builder.empty (parse bs)
+             let builder = foldl (accbit huff) Builder.empty (parse bs)
                  bytes = L.toStrict (Builder.toLazyByteString builder)
                  off = countRemaining builder
              in (off, bytes)
-    where accbit acc word =
-            case E.lookupBits huff word of
-              Nothing -> error (show word ++ " not in Huffmann tree")
-              Just bits -> Builder.append acc bits 
+
+accbit huff acc word =
+       case E.lookupBits huff word of
+         Nothing -> error (show word ++ " not in Huffmann tree")
+         Just bits -> Builder.append acc bits 
 
 countRemaining :: Builder.BitBuilder -> Word8
 countRemaining builder = go builder 0 
@@ -80,7 +78,7 @@ countRemaining builder = go builder 0
           bsl builder' = builderlen builder'
 
 decode :: S.ByteString -> S.ByteString
-decode bs = decodeHuff decoder bs' off
+decode bs = decodeHuff decoder bs' (fromIntegral off)
     where (decoder, off, bs') = readHuff bs
 
 decodeHuff :: M.HashMap String Word32-> S.ByteString -> Int -> S.ByteString
@@ -91,7 +89,7 @@ decodeHuff dec bs off = let (vals, _) = readValues dec bs off
 
 -- | Reads a Huffmann tree from the 'ByteString' and returns the
 --   Huffmann-Tree  along with the rest of the 'ByteString'
-readHuff :: S.ByteString -> (M.HashMap String Word32, Int, S.ByteString)
+readHuff :: S.ByteString -> (M.HashMap String Word32, Word8, S.ByteString)
 readHuff = D.deserialize
 
 readValues :: M.HashMap String Word32
@@ -134,6 +132,6 @@ probs words = let occurences = foldl add M.empty words
               in M.toList (M.map (/elems) occurences)
 
 parse :: S.ByteString -> [Word32]
-parse bs = case Bin.runGet parse32 bs of
+parse bs = case Bin.runGet Bin.getWord32be bs of
              (Right word, bs') -> word : parse bs'
              (Left _, _) -> []

@@ -9,18 +9,13 @@ import qualified Data.Binary.Strict.Get    as BinGet
 import qualified Data.ByteString           as S
 import qualified Data.HashMap.Strict       as M
 
-data BTree = Node BTree BTree | Leaf deriving (Show)
+data BTree = Node BTree BTree | Leaf deriving (Show, Eq)
 
-deserialize :: S.ByteString -> (M.HashMap String Word32, Int, S.ByteString)
-deserialize bs = let (nleaves, bs') = (first fromIntegral) $ read64 bs
-                     (leaves, bs'') = read32 bs' nleaves
-                     (off, bs''') = first fromIntegral $ read8 bs''
-                     decoder = readDecoder bs''' leaves
-                     -- assumption: a binary tree (not necessarily balanced)
-                     -- with n leaves has (n-1) nodes. thus the number of bits
-                     -- read is the sum of the two
-                     nbytes = ceiling $ (fromIntegral (nleaves + (nleaves - 1))) / 8
-                 in (decoder, off, S.drop nbytes bs'')
+deserialize :: S.ByteString -> (M.HashMap String Word32, Word8, S.ByteString)
+deserialize bs = let (tree, bs') = decodeTree bs
+                     (off, bs'') = read8 bs'
+                     (dec, bs''') = makeDecoder tree bs''
+                 in (dec, off, bs''')
 
 read8 :: S.ByteString -> (Word8, S.ByteString)
 read8 bs = let (res, bs') = BinGet.runGet BinGet.getWord8 bs
@@ -28,33 +23,31 @@ read8 bs = let (res, bs') = BinGet.runGet BinGet.getWord8 bs
                 Left e -> error e
                 Right val -> (val, bs')
 
-read32 :: S.ByteString -> Int -> ([Word32], S.ByteString)
-read32 bs 0 = ([], bs)
-read32 bs n = let (res, bs') = BinGet.runGet BinGet.getWord32be bs
-              in case res of
-                   Left e -> error e
-                   Right val -> first (val:) (read32 bs' (n-1))
+read32 :: S.ByteString -> (Word32, S.ByteString)
+read32 bs = let (res, bs') = BinGet.runGet BinGet.getWord32be bs
+             in case res of
+                  Left e -> error e
+                  Right val -> (val, bs')
 
-read64 :: S.ByteString -> (Word64, S.ByteString)
-read64 bs = let (res, bs') = BinGet.runGet BinGet.getWord64be bs
-            in case res of
-                 Left e -> error e
-                 Right val -> (val, bs')
+makeDecoder :: BTree -> S.ByteString -> (M.HashMap String Word32, S.ByteString)
+makeDecoder Leaf bs = first (M.singleton "1") (read32 bs)
+makeDecoder tree bs = go tree bs [] M.empty
+    where go Leaf bs code hmap = first (\x -> M.insert code x hmap) (read32 bs)
+          go (Node l r) bs code hmap =
+            let (lhmap, bs')  = go l bs (code++"1") hmap
+                (rhmap, bs'') = go r bs' (code++"0") hmap
+            in  (lhmap `M.union` rhmap, bs'')
 
-readDecoder :: S.ByteString -> [Word32] -> M.HashMap String Word32
-readDecoder bs leaves = case BitGet.runBitGet bs readTree of
+decodeTree :: S.ByteString -> (BTree, S.ByteString)
+decodeTree bs = case BitGet.runBitGet bs readTree of
                           Left e -> error e
-                          Right tree -> mkDecoder tree leaves
+                          Right (bits, tree) -> (tree, S.drop bytes bs)
+                            where bytes = ceiling (fromIntegral bits / 8)
 
-mkDecoder :: BTree -> [Word32] -> M.HashMap String Word32
-mkDecoder Leaf [val] = M.singleton "1" val
-mkDecoder root values = snd $ go root values [] M.empty
-    where go Leaf vals code map = (1, M.insert code (head vals) map)
-          go (Node l r) vals code map =
-            let (nleavesl, map') = go l vals (code++"1") map
-                (nleavesr, map'')= go r (drop nleavesl vals) (code++"0") map'
-            in (nleavesl+nleavesr, map'')
-
-readTree :: BitGet.BitGet BTree
-readTree = BitGet.getBit >>= \set ->
-    if set then liftM2 Node readTree readTree else return Leaf
+readTree :: BitGet.BitGet (Int, BTree)
+readTree = do set <- BitGet.getBit
+              if set
+                  then do (lb, l) <- readTree
+                          (rb, r) <- readTree
+                          return (lb+rb+1, Node l r)
+                  else return (1, Leaf)
