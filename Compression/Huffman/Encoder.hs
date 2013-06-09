@@ -4,7 +4,7 @@ module Compression.Huffman.Encoder where
 
 import Data.Hashable
 import Data.Monoid         (mappend)
-import Data.Word           (Word8)
+import Data.Word           (Word8, Word16)
 
 import qualified Data.Binary.BitBuilder    as B
 import qualified Data.Binary.Put           as BinPut
@@ -48,6 +48,9 @@ instance Serializable Int where
 
 instance Serializable Word8 where
     serialize = L.toStrict . BinPut.runPut . BinPut.putWord8
+
+instance Serializable Word16 where
+    serialize = L.toStrict . BinPut.runPut . BinPut.putWord16be
 
 -- | Searches a the bits for a value
 lookupBits :: (Eq a, Hashable a) => HuffTree a -> a -> Maybe B.BitBuilder
