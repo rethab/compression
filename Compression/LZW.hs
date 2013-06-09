@@ -7,6 +7,7 @@ import Data.Monoid                  (mempty, mappend)
 import Data.Word                    (Word, Word8, Word32)
 
 import qualified Data.HashMap.Lazy as M
+import qualified Data.ByteString      as S
 import qualified Data.ByteString.Lazy as BS
 import qualified Data.ByteString.Lazy.Char8 as C
 import qualified Data.ByteString.Lazy.Builder as B
@@ -24,8 +25,8 @@ import qualified Data.ByteString.Lazy.Builder as B
 --   if accumulator is not empty: (all previously consumed chars were in dict)
 --                                put previous index to builder
 --   else all done
-compress :: BS.ByteString -> BS.ByteString
-compress = B.toLazyByteString . step defaultCDict [] (-1)
+compress :: S.ByteString -> S.ByteString
+compress = BS.toStrict . B.toLazyByteString . step defaultCDict [] (-1) . BS.fromStrict
     where
           -- take one char from bytestring and pass it to the encoding function
           step :: Dict String Word -> String -> Word -> C.ByteString -> B.Builder
@@ -47,8 +48,8 @@ compress = B.toLazyByteString . step defaultCDict [] (-1)
                                              Just idx' -> step dict acc' idx' bs 
 
 -- | Decompress the contents of the 'ByteString' with the LZW Algorithm
-decompress :: BS.ByteString -> BS.ByteString
-decompress = B.toLazyByteString . step defaultDDict []
+decompress :: S.ByteString -> S.ByteString
+decompress = BS.toStrict . B.toLazyByteString . step defaultDDict [] . BS.fromStrict
     where step :: Dict Word32 String -> String -> BS.ByteString -> B.Builder
           step dict prev bs = case readWord32 bs of
                                 Nothing -> mempty

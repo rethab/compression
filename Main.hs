@@ -1,12 +1,13 @@
-module Compression.Main where
+module Main where
 
 import Control.Monad      (when)
 import System.Environment (getArgs)
 import System.Exit        (exitFailure)
 
-import qualified Data.ByteString.Lazy as BS
+import qualified Data.ByteString as BS
 
 import Compression.LZW (compress, decompress)
+import Compression.Huffman (encode, decode)
 
 main :: IO ()
 main = do
@@ -16,8 +17,8 @@ main = do
         src = args !! 1
         dst = args !! 2
         trans = if mode == "c"
-                  then compress
-                  else decompress
+                  then encode . compress
+                  else decompress . decode
     bs <- BS.readFile src
     BS.writeFile dst (trans bs)
 

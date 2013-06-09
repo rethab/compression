@@ -8,16 +8,20 @@ import Data.Word
 import Data.Monoid
 import Compression.LZW hiding (main)
 
-import qualified Data.ByteString.Lazy.Char8 as C
-import qualified Data.ByteString.Lazy as BS
+import qualified Data.ByteString.Char8        as C
+import qualified Data.ByteString.Lazy         as BS
+import qualified Data.ByteString              as S
 import qualified Data.ByteString.Lazy.Builder as B
 
 instance Arbitrary C.ByteString where
     arbitrary = fmap C.pack arbitrary
 
+instance Arbitrary BS.ByteString where
+    arbitrary = fmap BS.pack arbitrary
+
 -- | Convert a list of 32 bit words to a bytestring (word8 stream)
-to32BS :: [Word32] -> BS.ByteString
-to32BS = foldr BS.cons BS.empty . fill
+to32BS :: [Word32] -> S.ByteString
+to32BS = foldr S.cons S.empty . fill
     where fill [] = []
           fill (x:xs) = let a = fromIntegral (shiftR (0xFF000000 .&. x) 24)
                             b = fromIntegral (shiftR (0x00FF0000 .&. x) 16)

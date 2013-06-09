@@ -106,7 +106,7 @@ readValues dec bs off =
 --   in the last byte, 'offset' bits are discarded
 readBits :: M.HashMap String Word32 -> Int -> BitGet.BitGet (Int, [Word32])
 readBits dec offset = go [] 0 []
-    where go bitsacc nbits words =
+    where go bitsacc nbits wrds =
             do done <- BitGet.isEmpty
                remaining <- BitGet.remaining
                if remaining == offset
@@ -115,21 +115,21 @@ readBits dec offset = go [] 0 []
                     -- we might have undecoded bits in 'bitsacc'
                     -- but leaves since they probably come from 
                     -- stuffing
-                 then return (nbits, words) 
+                 then return (nbits, wrds) 
                  else do bit <- BitGet.getBit
                          let bits' = bitsacc ++ [b2c bit]
                          case M.lookup bits' dec of
-                           Nothing -> go bits' nbits words
-                           Just word -> go [] (nbits + length bits') (words ++ [word])
+                           Nothing -> go bits' nbits wrds
+                           Just word -> go [] (nbits + length bits') (wrds ++ [word])
           b2c True  = '1'
           b2c False = '0'
 
 -- | Finds the probabilities of all elements in the 'ByteString'
 probs :: [Word32] -> [(Word32, Float)]
-probs words = let occurences = foldl add M.empty words
-                  add map word = M.insertWith (+) word 1 map
-                  elems = fromIntegral (length words)
-              in M.toList (M.map (/elems) occurences)
+probs wrds = let occurences = foldl add M.empty wrds
+                 add map word = M.insertWith (+) word 1 map
+                 elems = fromIntegral (length wrds)
+             in M.toList (M.map (/elems) occurences)
 
 parse :: S.ByteString -> [Word32]
 parse bs = case Bin.runGet Bin.getWord32be bs of
