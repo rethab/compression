@@ -1,6 +1,7 @@
 module Main where
 
 import Control.Monad      (when)
+import Data.Maybe         (isNothing, fromJust)
 import System.Environment (getArgs)
 import System.Exit        (exitFailure)
 
@@ -16,12 +17,17 @@ main = do
     let mode = args !! 0
         src = args !! 1
         dst = args !! 2
-        trans = if mode == "c"
-                  then encode . compress
-                  else decompress . decode
+        mbtrans = lookup mode opts
+    when (isNothing mbtrans) usage
     bs <- BS.readFile src
-    BS.writeFile dst (trans bs)
+    BS.writeFile dst ((fromJust mbtrans) bs)
 
 usage :: IO ()
-usage = putStrLn "lzw [c/d] source destination"
+usage = do putStrLn "[mode] source destination"
+           let mods = map fst opts
+           putStrLn " where mode is one of:"
+           putStrLn $ "   " ++ show mods
 
+
+opts = [("enc", encode), ("comp", compress), ("encomp", encode . compress)
+       ,("dec", decode), ("decomp", decompress), ("deccomp", decompress . decode)]
