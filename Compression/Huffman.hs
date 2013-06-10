@@ -1,3 +1,4 @@
+{-# LANGUAGE BangPatterns #-}
 {-
  - Author: Reto Hablützel (rethab)
  -
@@ -34,6 +35,7 @@ module Compression.Huffman where
 import Control.Applicative ((<$>))
 import Data.Monoid         (mappend)
 import Data.Word           (Word8)
+import Data.List           (foldl')
 
 import qualified Data.Binary.Strict.Get    as Bin
 import qualified Data.Binary.Strict.BitGet as BitGet
@@ -57,15 +59,15 @@ encode bs = let wrds = S.unpack bs
 
 encodevals :: E.HuffTree Word8 -> S.ByteString -> (Word8, S.ByteString)
 encodevals huff bs =
-             let builder = foldl (accbit huff) Builder.empty (S.unpack bs)
+             let builder = foldl' (accbit huff) Builder.empty (S.unpack bs)
                  bytes = L.toStrict (Builder.toLazyByteString builder)
                  off = countRemaining builder
              in (off, bytes)
 
-accbit huff acc word =
+accbit huff !acc !word =
        case E.lookupBits huff word of
          Nothing -> error (show word ++ " not in Huffmann tree")
-         Just bits -> Builder.append acc bits 
+         Just !bits -> Builder.append acc bits 
 
 countRemaining :: Builder.BitBuilder -> Word8
 countRemaining builder = go builder 0 
